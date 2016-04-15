@@ -3,7 +3,46 @@
 <style>
 
 /* CSS goes here. */
+/*    color for the whole country*/
+    .subunit.VNM { fill: #dcd; }
+/*    somehow China's hainan island has its own id*/
+    .subunit.CHI { display: none; }
+    .subunit.CHH { display: none; }
+    .subunit.LAO { fill: #ddc; }
+    .subunit.KHM { fill: #cdc; }
+    .subunit.THA { display: none; }
 
+/*    color for boundary*/
+    .subunit-boundary {
+        fill: none;
+        stroke: #777;
+        stroke-dasharray: 2,2;
+        stroke-linejoin: round;
+    }
+    .subunit-boundary.external {
+        stroke: #aaa;
+    }
+
+/*    Place labels*/
+    .place,
+    .place-label {
+      fill: #444;
+    }
+
+    text {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 10px;
+      pointer-events: none;
+    }
+    
+/*    country labels*/
+    .subunit-label {
+      fill: #777;
+      fill-opacity: .5;
+      font-size: 30px;
+      font-weight: 300;
+      text-anchor: middle;
+    }
 </style>
 <body>
 <script src="//d3js.org/d3.v3.min.js" charset="utf-8"></script>
@@ -11,11 +50,21 @@
 <script>
 
     var width = 960,
-        height = 1160;
+        height = 1160,
+        bordercolor = 'black',
+        border = 10;
 
     var svg = d3.select("body").append("svg")
         .attr("width", width)
         .attr("height", height);
+     var borderPath = svg.append("rect")
+        .attr("x", 0)
+        .attr("y", 0)
+        .attr("height", height)
+        .attr("width", width)
+        .style("stroke", bordercolor)
+        .style("fill", "none")
+        .style("stroke-width", border);
     
     
 /* Load the TopoJSON file */
@@ -28,9 +77,88 @@
     
 //    visualize the map data
     var visualize = function(mapdata){
+        // 1. convert the TopoJSON format to GeoJSON format
+        var subunits = topojson.feature(mapdata, mapdata.objects.subunits);
+        
+        // 2. project from 3D data to 2D data
+        var projection = d3.geo.albers()
+            .center([114, 4.4])
+            .rotate([2, 32])
+            .parallels([11, 20])
+            .scale(4000)
+            .translate([width / 2, height / 2]);
+        
+        // 3. generate path for the shapes
+        var path = d3.geo.path()
+            .projection(projection);
+        
+        // 4. display countries
+        // subunits.features encode the country
+        svg.selectAll(".subunit")
+            .data(subunits.features)
+            .enter().append("path")
+            .attr("class", function(d) { return "subunit " + d.id; })
+            .attr("d", path);
+        
+        // draw boundary internal
         svg.append("path")
-          .datum(topojson.feature(mapdata, mapdata.objects.subunits))
-          .attr("d", d3.geo.path().projection(d3.geo.mercator()));
+            .datum(topojson.mesh(mapdata, mapdata.objects.subunits, function(a, b) { return a.id !== b.id; }))
+            .attr("d", path)
+            .attr("class", "subunit-boundary");
+        // draw external boundary of uncolor countries
+        svg.append("path")
+            .datum(topojson.mesh(mapdata, mapdata.objects.subunits, function(a, b) { 
+                return a.id === b.id && (a.id ==="THA" || a.id ==="CHI" || a.id ==="CHH"); 
+             }))
+            .attr("d", path)
+            .attr("class", "subunit-boundary external");
+        
+        
+        // 5. display places and their labels
+        svg.append("path")
+            .datum(topojson.feature(mapdata, mapdata.objects.places))
+            .attr("d", path)
+            .attr("class", "place");
+        
+        // label
+        svg.selectAll(".place-label")
+            .data(topojson.feature(mapdata, mapdata.objects.places).features)
+            .enter().append("text")
+            .attr("class", "place-label")
+            .attr("transform", function(d) { return "translate(" + projection(d.geometry.coordinates) + ")"; })
+            .attr("dy", ".35em")
+            .text(function(d) { return d.properties.name; });
+
+        // positioning of labels
+        svg.selectAll(".place-label")
+            .attr("x", function(d) { return d.geometry.coordinates[0] > -1 ? 6 : -6; })
+            .style("text-anchor", function(d) { return d.geometry.coordinates[0] > -1 ? "start" : "end"; });
+
+        // 6. display country labels
+        svg.selectAll(".subunit-label")
+            .data(topojson.feature(mapdata, mapdata.objects.subunits).features)
+            .enter().append("text")
+            .attr("class", function(d) { return "subunit-label " + d.id; })
+            .attr("transform", function(d) { 
+                var centroid = path.centroid(d),
+                    x = centroid[0],
+                    y = centroid[1];
+                if (d.id === "VNM"){
+                    x += 150;
+                    y += 120;
+                }
+                if (d.id === "LAO"){
+                    x -= 70;
+                    y -= 100;
+                }
+                if (d.id === "CHI"){
+                    x = 500;
+                    y = 50;
+                }
+                return "translate(" + x+","+y + ")"; 
+            })
+            .attr("dy", ".35em")
+            .text(function(d) { return d.properties.name; });
     };
 
 </script>
