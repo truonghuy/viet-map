@@ -23,12 +23,8 @@
 var width = 960,
     height = 500;
 
-var maxScale = 1e6;
+//var maxScale = 1e6;
     
-var radius = d3.scale.sqrt()
-    .domain([0, maxScale])
-    .range([0, 10]);
-
 var path = d3.geo.path();
 
 var svg = d3.select("body").append("svg")
@@ -45,16 +41,23 @@ queue()
 function ready(error, us, centroid) {
   if (error) throw error;
 
+    console.log('Load successful');
+    
   svg.append("path")
       .attr("class", "states")
       .datum(topojson.feature(us, us.objects.states))
       .attr("d", path);
 
+    var radius = d3.scale.sqrt()
+    .domain([0, centroid.max_num_uni])
+    .range([0, 30]);
+
+    
   svg.selectAll(".symbol")
-      .data(centroid.features.sort(function(a, b) { return b.properties.population - a.properties.population; }))
+      .data(centroid.features.sort(function(a, b) { return b.properties.num_uni - a.properties.num_uni; }))
     .enter().append("path")
       .attr("class", "symbol")
-      .attr("d", path.pointRadius(function(d) { return radius(d.properties.population); }));
+      .attr("d", path.pointRadius(function(d) { return radius(d.properties.num_uni); }));
 }
 
 </script>
