@@ -34,16 +34,29 @@
         fill: #fff !important;
         stroke: #000;
     }
+    
+/*    legends */
+    .key {
+      font: 10px sans-serif;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    .caption {
+      font-weight: bold;
+    }
+    .key line {
+      stroke: #000;
+      shape-rendering: crispEdges;
+    }
+    .domain{
+        display: none;
+    }
 </style>
 
 <body>
     <script>
-        //var hits = {};
-        //var parade = window.histograms.states;
-        //    
-        //for (var i = 0 ; i<parade.length ; i++)
-        //    hits[parade[i].name] = parade[i].hits;
-
         var width = 960,
             height = 500,
             bordercolor = 'black',
@@ -68,6 +81,10 @@
             .style("stroke", bordercolor)
             .style("stroke-width", border)
             .on("click", click);
+        
+        legend = svg.append('g')
+            .attr('class', 'key')
+            .attr("transform", "translate(" + (width - 300) + ", 20)");
 
         var g = svg.append("g")
             .attr("transform", "translate(" + width / 2 + "," + height / 2 + ")")
@@ -81,24 +98,74 @@
             .defer(d3.json, "data/us_university_centroids.json")
             .await(ready);
 
-        
+        var stateInfo;
+        var getPeoplePerUni = function (d) {
+
+            return d.properties.population / d.properties.num_uni;
+        };
+
         function ready(error, us, centroid) {
             if (error) throw error;
 
-//            centroid 
+            centroid.features = _.reject(centroid.features, function(d){
+                return d.id == '78' || d.id == '72';
+            });
+
+            //            centroid 
             stateInfo = {};
             _.each(centroid.features, function(d){
                 stateInfo[parseInt(d.id)] = d;
             });
-            
-//            console.log(stateInfo);
+
+            // Compute the density of universities
+            // = population/ num_uni
+            maxNumPeoplePerUni = getPeoplePerUni(_.max(centroid.features, getPeoplePerUni));
+            minNumPeoplePerUni = getPeoplePerUni(_.min(centroid.features, getPeoplePerUni));
 
             var heatmap = d3.scale.linear()
-                .domain([0, centroid.max_num_uni])
+                //                .domain([0, centroid.max_num_uni])
+                .domain([minNumPeoplePerUni, maxNumPeoplePerUni])
                 .interpolate(d3.interpolateRgb)
-                .range(["white", "red"]);            
-//                .range(["#ffffff", "#073f07"]);
+                .range(["#a50026", "yellow"]);
+
+            // legend
+
+            // the color mapping
+            var x = d3.scale.linear()
+                .domain([minNumPeoplePerUni, maxNumPeoplePerUni])
+                .range([0, 240]);
+
+            // the scale to be displayed
+            var xAxis = d3.svg.axis()
+                .scale(x)
+                .orient("bottom")
+                .tickSize(13)
+                .tickFormat(d3.format("s"));
+
+            legend.selectAll(".legend-rect")
+                .data(pair(x.ticks(10)))
+                .enter().append("rect")
+                .attr('class', 'legend-rect')
+                .attr("height", 8)
+                .attr("x", function (d) {
+                    return x(d[0]);
+                })
+                .attr("width", function (d) {
+                    return x(d[1]) - x(d[0]);
+                })
+                .style("fill", function (d) {
+                    return heatmap(d[0]);
+                });
             
+
+            legend.call(xAxis).append("text")
+                .attr("class", "caption")
+                .attr("y", -6)
+                .text("Number of residents per university");
+
+
+
+            // the map
             topoFeatures = topojson.feature(us, us.objects.states).features;
             // somehow in the data, there is the id 78,
             // which does not map to any state
@@ -106,9 +173,8 @@
             topoFeatures = _.reject(topoFeatures, function(d){
                 return d.id == 78 || d.id == 72;
             });
-            
+
             var states = g.selectAll("path")
-//                .data(json.features)
                 .data(topoFeatures)
                 .enter().append("path")
                 .attr("d", path)
@@ -116,21 +182,20 @@
                     return d.id;
                 })
                 .style("fill", function (d) {
-                    return heatmap(stateInfo[d.id].properties.num_uni);
+                    return heatmap(getPeoplePerUni(stateInfo[d.id]));
                 })
                 .on("click", click);
-            
+            states.append('title')
+                .text(function (d) {
+                    return stateInfo[d.id].properties.name + ': ' +
+                        stateInfo[d.id].properties.num_uni;
+                });
+
             var labels = g.selectAll("text")
                 .data(topoFeatures)
                 .enter().append("text")
                 .attr("transform", function (d) {
-//                    return "translate(" + path.centroid(d) + ")";
-                    
-//                    return "translate(" + stateInfo[d.id].geometry.coordinates + ")";
-                    if (projection(stateInfo[d.id].geometry.coordinates) == null)
-                        console.log(stateInfo[d.id]);
-                    
-                    return "translate(" + projection( stateInfo[d.id].geometry.coordinates) + ")";
+                    return "translate(" + projection(stateInfo[d.id].geometry.coordinates) + ")";
                 })
                 .attr("id", function (d) {
                     return 'label-' + d.id;
@@ -138,7 +203,6 @@
                 .attr("dy", ".35em")
                 .on("click", click)
                 .text(function (d) {
-                    console.log(stateInfo[d.id].properties.name);
                     return stateInfo[d.id].properties.code;
                 });
         }
@@ -164,13 +228,14 @@
                 });
             g.selectAll("text")
                 .text(function (d) {
-                    return d.id;
+                    return stateInfo[d.id].properties.code;
                 })
                 .classed("active", false);
             if (centered) {
                 g.select("#label-" + centered.id)
                     .text(function (d) {
-                        return d.id + ': ' + (d.id || '(none)');
+                        return stateInfo[d.id].properties.name + ': ' +
+                            stateInfo[d.id].properties.num_uni;
                     })
                     .classed("active", centered && function (d) {
                         return d === centered;
@@ -182,4 +247,10 @@
                 .attr("transform", "scale(" + k + ")translate(" + x + "," + y + ")")
                 .style("stroke-width", 1.5 / k + "px");
         }
+
+        var pair = function (array) {
+            return array.slice(1).map(function (b, i) {
+                return [array[i], b];
+            });
+        };
     </script>

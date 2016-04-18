@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="//d3js.org/d3.v3.min.js"></script>
+<script src="//d3js.org/topojson.v1.min.js"></script>
+<script src="//d3js.org/queue.v1.min.js"></script>
+<script src="//underscorejs.org/underscore-min.js"></script>
+<style>
+    .background {
+        fill: none;
+        pointer-events: all;
+    }
+    
+    #states {
+        stroke: #000;
+        stroke-width: 1.5px;
+    }
+    
+    #states text {
+        fill: #000;
+        stroke: none;
+        text-anchor: middle;
+        font-size: 10px;
+    }
+    
+    #states .active {
+        fill: steelblue !important;
+    }
+    
+    #states text.active {
+        font-size: 12px;
+        font-weight: bold;
+        fill: #fff;
+        stroke-width: .5px;
+        fill: #fff !important;
+        stroke: #000;
+    }
+    
+/*    legends */
+    .key {
+      font: 10px sans-serif;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    .caption {
+      font-weight: bold;
+    }
+    .key line {
+      stroke: #000;
+      shape-rendering: crispEdges;
+    }
+    .domain{
+        display: none;
+    }
+</style>
+
+<body>
+    <script>
+        //var hits = {};
+        //var parade = window.histograms.states;
+        //    
+        //for (var i = 0 ; i<parade.length ; i++)
+        //    hits[parade[i].name] = parade[i].hits;
+
+        var width = 960,
+            height = 500,
+            bordercolor = 'black',
+            border = 3;
+        var centered;
+
+        var projection = d3.geo.albersUsa()
+            .scale(width)
+            .translate([0, 0]);
+
+        var path = d3.geo.path()
+            .projection(projection);
+
+        var svg = d3.select("body").append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        svg.append("rect")
+            .attr("class", "background")
+            .attr("width", width)
+            .attr("height", height)
+            .style("stroke", bordercolor)
+            .style("stroke-width", border)
+            .on("click", click);
+        
+        legend = svg.append('g')
+            .attr('class', 'key')
+            .attr("transform", "translate(" + (width - 300) + ", 20)");
+
+        var g = svg.append("g")
+            .attr("transform", "translate(" + width / 2 + "," + height / 2 + ")")
+            .append("g")
+            .attr("id", "states");
+
+        // load the following files asynchronously
+        // invoke ready when done
+        queue()
+            .defer(d3.json, "data/us.json")
+            .defer(d3.json, "data/us_university_centroids.json")
+            .await(ready);
+
+        var stateInfo;
+        
+        function ready(error, us, centroid) {
+            if (error) throw error;
+
+            centroid.features = _.reject(centroid.features, function(d){
+                return d.id == '78' || d.id == '72';
+            });
+            
+//            centroid 
+            stateInfo = {};
+            _.each(centroid.features, function(d){
+                stateInfo[parseInt(d.id)] = d;
+            });
+            
+            var heatmap = d3.scale.linear()
+                .domain([0, centroid.max_num_uni])
+                .interpolate(d3.interpolateRgb)
+//                .range(["red", "yellow"]);
+                .range(["yellow", "#a50026"]);
+
+            // legend
+
+            // the color mapping
+            var x = d3.scale.linear()
+                .domain([0, centroid.max_num_uni])
+                .range([0, 240]);
+
+            // the scale to be displayed
+            var xAxis = d3.svg.axis()
+                .scale(x)
+                .orient("bottom")
+                .tickSize(13)
+                .tickFormat(d3.format("s"));
+
+            legend.selectAll(".legend-rect")
+                .data(pair(x.ticks(10)))
+                .enter().append("rect")
+                .attr('class', 'legend-rect')
+                .attr("height", 8)
+                .attr("x", function (d) {
+                    return x(d[0]);
+                })
+                .attr("width", function (d) {
+//                    console.log(x(d[1]) - x(d[0]));
+                    return x(d[1]) - x(d[0]);
+                })
+                .style("fill", function (d) {
+//                    console.log(d[0]);
+//                    console.log(heatmap(d[0]));
+//                    return 'white';
+                    return heatmap(d[0]);
+                });
+            
+
+            legend.call(xAxis).append("text")
+                .attr("class", "caption")
+                .attr("y", -6)
+                .text("Number of universities");
+
+
+
+            // the map
+            topoFeatures = topojson.feature(us, us.objects.states).features;
+            // somehow in the data, there is the id 78,
+            // which does not map to any state
+            // remove Puerto Rico (72) as well 
+            topoFeatures = _.reject(topoFeatures, function(d){
+                return d.id == 78 || d.id == 72;
+            });
+
+            var states = g.selectAll("path")
+//                .data(json.features)
+                .data(topoFeatures)
+                .enter().append("path")
+                .attr("d", path)
+                .attr("id", function (d) {
+                    return d.id;
+                })
+                .style("fill", function (d) {
+                    return heatmap(stateInfo[d.id].properties.num_uni);
+                })
+                .on("click", click);
+            states.append('title')
+                .text(function(d){
+                     return stateInfo[d.id].properties.name + ': ' + 
+                            stateInfo[d.id].properties.num_uni;
+                });
+            
+            var labels = g.selectAll("text")
+                .data(topoFeatures)
+                .enter().append("text")
+                .attr("transform", function (d) {
+                    return "translate(" + projection(stateInfo[d.id].geometry.coordinates) + ")";
+                })
+                .attr("id", function (d) {
+                    return 'label-' + d.id;
+                })
+                .attr("dy", ".35em")
+                .on("click", click)
+                .text(function (d) {
+                    return stateInfo[d.id].properties.code;
+                });
+        }
+
+        function click(d) {
+            var x = 0,
+                y = 0,
+                k = 1;
+
+            if (d && centered !== d) {
+                var centroid = path.centroid(d);
+                x = -centroid[0];
+                y = -centroid[1];
+                k = 4;
+                centered = d;
+            } else {
+                centered = null;
+            }
+
+            g.selectAll("path")
+                .classed("active", centered && function (d) {
+                    return d === centered;
+                });
+            g.selectAll("text")
+                .text(function (d) {
+                    return stateInfo[d.id].properties.code;
+                })
+                .classed("active", false);
+            if (centered) {
+                g.select("#label-" + centered.id)
+                    .text(function (d) {
+                        return stateInfo[d.id].properties.name + ': ' + 
+                            stateInfo[d.id].properties.num_uni;
+                    })
+                    .classed("active", centered && function (d) {
+                        return d === centered;
+                    });
+            }
+
+            g.transition()
+                .duration(1000)
+                .attr("transform", "scale(" + k + ")translate(" + x + "," + y + ")")
+                .style("stroke-width", 1.5 / k + "px");
+        }
+
+        var pair = function (array) {
+            return array.slice(1).map(function (b, i) {
+                return [array[i], b];
+            });
+        };
+    </script>
